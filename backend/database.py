@@ -3,6 +3,7 @@ import json
 import uuid
 import hashlib
 from typing import Dict, Any, List, Optional
+from datetime import datetime, date
 from config import DB_PATH
 
 def get_connection():
@@ -18,16 +19,30 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Users table for real credential storage
+    # Users table for real credential storage and per-user streak
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         name TEXT NOT NULL,
+        streak_days INTEGER DEFAULT 1,
+        study_minutes INTEGER DEFAULT 0,
+        last_active_date TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # Alter table if existing without columns
+    for col, ctype in [
+        ("streak_days", "INTEGER DEFAULT 1"),
+        ("study_minutes", "INTEGER DEFAULT 0"),
+        ("last_active_date", "TEXT"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {ctype}")
+        except Exception:
+            pass
     
     # Study materials table
     cursor.execute("""
@@ -52,7 +67,7 @@ def init_db():
     )
     """)
     
-    # Quiz attempts table (tracks progress across attempts)
+    # Quiz attempts table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS quiz_attempts (
         id TEXT PRIMARY KEY,
@@ -124,7 +139,23 @@ def save_quiz(material_id: str, title: str, questions: List[Dict[str, Any]]) -> 
     conn.close()
     return quiz_id
 
-def save_quiz_attempt(quiz_id: str, material_id: str, score: int, total_questions: int, weak_topics: List[Dict[str, Any]], answers: List[Dict[str, Any]]) -> str:
+def get_quiz(quiz_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM quizzes WHERE id = ?", (quiz_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "material_id": row["material_id"],
+        "title": row["title"],
+        "questions": json.loads(row["questions_json"]),
+        "created_at": row["created_at"]
+    }
+
+def record_quiz_attempt(quiz_id: str, material_id: str, score: int, total_questions: int, weak_topics: List[str], answers: List[int]) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     attempt_id = str(uuid.uuid4())
@@ -139,24 +170,18 @@ def save_quiz_attempt(quiz_id: str, material_id: str, score: int, total_question
 def get_material_attempts(material_id: str) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM quiz_attempts WHERE material_id = ? ORDER BY created_at ASC",
-        (material_id,)
-    )
+    cursor.execute("SELECT * FROM quiz_attempts WHERE material_id = ? ORDER BY created_at ASC", (material_id,))
     rows = cursor.fetchall()
     conn.close()
     attempts = []
-    for row in rows:
+    for r in rows:
         attempts.append({
-            "id": row["id"],
-            "quiz_id": row["quiz_id"],
-            "material_id": row["material_id"],
-            "score": row["score"],
-            "total_questions": row["total_questions"],
-            "percentage": round((row["score"] / row["total_questions"]) * 100, 1) if row["total_questions"] > 0 else 0,
-            "weak_topics": json.loads(row["weak_topics_json"]),
-            "answers": json.loads(row["answers_json"]),
-            "created_at": row["created_at"]
+            "id": r["id"],
+            "score": r["score"],
+            "total_questions": r["total_questions"],
+            "weak_topics": json.loads(r["weak_topics_json"]),
+            "answers": json.loads(r["answers_json"]),
+            "created_at": r["created_at"]
         })
     return attempts
 
@@ -202,27 +227,72 @@ def create_user(email: str, password: str, name: str) -> Dict[str, Any]:
     user_id = str(uuid.uuid4())
     pw_hash = hash_password(password)
     display_name = name.strip() if name and name.strip() else email.split('@')[0]
+    today_str = date.today().isoformat()
+    # New user starts with exactly 1 day streak and 0 study minutes
     cursor.execute(
-        "INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)",
-        (user_id, email.lower().strip(), pw_hash, display_name)
+        "INSERT INTO users (id, email, password_hash, name, streak_days, study_minutes, last_active_date) VALUES (?, ?, ?, ?, 1, 0, ?)",
+        (user_id, email.lower().strip(), pw_hash, display_name, today_str)
     )
     conn.commit()
     conn.close()
-    return {"id": user_id, "email": email.lower().strip(), "name": display_name}
+    return {
+        "id": user_id,
+        "email": email.lower().strip(),
+        "name": display_name,
+        "streak_days": 1,
+        "study_minutes": 0,
+        "last_active_date": today_str
+    }
 
 def authenticate_user(email: str, password: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     pw_hash = hash_password(password)
     cursor.execute(
-        "SELECT id, email, name FROM users WHERE email = ? AND password_hash = ?",
+        "SELECT id, email, name, streak_days, study_minutes, last_active_date FROM users WHERE email = ? AND password_hash = ?",
         (email.lower().strip(), pw_hash)
     )
     row = cursor.fetchone()
-    conn.close()
     if not row:
+        conn.close()
         return None
-    return {"id": row["id"], "email": row["email"], "name": row["name"]}
+
+    user_id = row["id"]
+    current_streak = row["streak_days"] or 1
+    current_minutes = row["study_minutes"] or 0
+    last_active = row["last_active_date"]
+    today_str = date.today().isoformat()
+
+    # Calculate real consecutive days streak
+    if last_active != today_str:
+        if last_active:
+            try:
+                last_d = date.fromisoformat(last_active)
+                diff = (date.today() - last_d).days
+                if diff == 1:
+                    current_streak += 1  # Consecutive day login!
+                elif diff > 1:
+                    current_streak = 1  # Streak reset
+            except Exception:
+                current_streak = 1
+        else:
+            current_streak = 1
+
+        cursor.execute(
+            "UPDATE users SET streak_days = ?, last_active_date = ? WHERE id = ?",
+            (current_streak, today_str, user_id)
+        )
+        conn.commit()
+
+    conn.close()
+    return {
+        "id": user_id,
+        "email": row["email"],
+        "name": row["name"],
+        "streak_days": current_streak,
+        "study_minutes": current_minutes,
+        "last_active_date": today_str
+    }
 
 # Initialize tables when imported
 init_db()

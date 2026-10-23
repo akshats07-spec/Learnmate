@@ -14,25 +14,40 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { getUserStats, formatStudyTime, UserStats } from "@/lib/userStats";
 
 export default function DashboardOverviewPage() {
   const { user } = useAuth();
   const [greeting, setGreeting] = useState("Good afternoon");
+  const [stats, setStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
     const hr = new Date().getHours();
     if (hr < 12) setGreeting("Good morning");
     else if (hr < 18) setGreeting("Good afternoon");
     else setGreeting("Good evening");
-  }, []);
 
-  const userName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Student";
+    // Load dynamic user stats from storage
+    const loaded = getUserStats(user?.email);
+    setStats(loaded);
+  }, [user]);
+
+  const userName =
+    user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Student";
+
+  const streakDays = stats?.streakDays ?? 1;
+  const studyTimeFormatted = formatStudyTime(stats?.totalStudyMinutes ?? 25);
+  const topicsCount = stats?.topicsDiscovered ?? 4;
+  const masteryPct = stats?.overallMastery ?? 60;
+  const activeTitle = stats?.activeMaterialTitle ?? "Cell Biology & Energy Synthesis.pdf";
+  const activeId = stats?.activeMaterialId ?? "bio-ch7";
+  const attempts = stats?.quizAttempts ?? [];
 
   return (
     <div className="space-y-8">
@@ -50,7 +65,7 @@ export default function DashboardOverviewPage() {
             Ready to continue your mastery?
           </h1>
           <p className="text-xs text-muted mt-1">
-            You're currently studying <strong className="text-white">Biology Chapter 7: Cellular Respiration</strong>.
+            You're currently studying <strong className="text-white">{activeTitle}</strong>.
           </p>
         </div>
 
@@ -73,13 +88,37 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
 
-      {/* ── 2. Metric KPI Cards ───────────────────────────────── */}
+      {/* ── 2. Metric KPI Cards (Personalized & Dynamic) ──────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Learning Streak", value: "4 Days", icon: Flame, tint: "text-amber-400 bg-amber-400/10", sub: "Keep it up today!" },
-          { label: "Total Study Time", value: "3h 45m", icon: Clock, tint: "text-sky-400 bg-sky-400/10", sub: "+45m this week" },
-          { label: "Topics Discovered", value: "14 Topics", icon: BookOpen, tint: "text-violet-bright bg-violet/10", sub: "Across 2 materials" },
-          { label: "Overall Mastery", value: "68%", icon: TrendingUp, tint: "text-mint bg-mint/10", sub: "+12% from last attempt" },
+          {
+            label: "Learning Streak",
+            value: `${streakDays} ${streakDays === 1 ? "Day" : "Days"}`,
+            icon: Flame,
+            tint: "text-amber-400 bg-amber-400/10",
+            sub: streakDays === 1 ? "Day 1 — Welcome to LearnMate!" : "Keep your daily streak going!",
+          },
+          {
+            label: "Total Study Time",
+            value: studyTimeFormatted,
+            icon: Clock,
+            tint: "text-sky-400 bg-sky-400/10",
+            sub: "Logged study time",
+          },
+          {
+            label: "Topics Discovered",
+            value: `${topicsCount} Topics`,
+            icon: BookOpen,
+            tint: "text-violet-bright bg-violet/10",
+            sub: `Across ${stats?.materialsCount || 1} material(s)`,
+          },
+          {
+            label: "Overall Mastery",
+            value: `${masteryPct}%`,
+            icon: TrendingUp,
+            tint: "text-mint bg-mint/10",
+            sub: attempts.length > 0 ? `Across ${attempts.length} quiz attempt(s)` : "Take a quiz to calibrate",
+          },
         ].map((m, i) => (
           <Card key={i} className="p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
@@ -103,81 +142,128 @@ export default function DashboardOverviewPage() {
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
                 <BookOpen size={16} className="text-violet" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Continue Learning</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Active Coursework
+                </h3>
               </div>
-              <Badge variant="mint">5 Pages Indexed</Badge>
+              <Badge variant="mint">Ready for Study</Badge>
             </div>
 
             <div className="p-4 rounded-xl bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <span className="text-2xs text-muted uppercase font-bold block mb-1">Active Coursework</span>
-                <h4 className="text-base font-bold text-white">Introduction to Cell Biology & Energy Synthesis.pdf</h4>
+                <span className="text-2xs text-muted uppercase font-bold block mb-1">
+                  Active Document
+                </span>
+                <h4 className="text-base font-bold text-white">{activeTitle}</h4>
                 <p className="text-xs text-muted mt-1">
-                  Last active: 2 hours ago &bull; 4 core topics detected &bull; 1 pending revision plan
+                  Indexed topics available &bull; Grounded AI Tutor & 3D Visuals ready
                 </p>
               </div>
-              <Link href="/library/bio-ch7" className="shrink-0">
-                <Button size="sm">Open Workspace <ChevronRight size={14} /></Button>
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link href={`/library/${activeId}`} className="shrink-0">
+                  <Button size="sm">
+                    Open Workspace <ChevronRight size={14} />
+                  </Button>
+                </Link>
+                <Link href={`/practice?materialId=${activeId}`} className="shrink-0">
+                  <Button variant="secondary" size="sm">
+                    Take Quiz
+                  </Button>
+                </Link>
+              </div>
             </div>
 
-            {/* Topic Mastery Progress Bars */}
-            <div className="space-y-3 pt-2">
-              <span className="text-xs font-semibold text-slate-300 block">Topic Mastery Breakdown</span>
-              {[
-                { name: "Cell Membrane & Transport", mastery: 85, status: "Mastered", color: "bg-mint" },
-                { name: "Mitochondria & Energy Harvesting", mastery: 48, status: "Needs Practice", color: "bg-rose-400" },
-                { name: "Plant vs Animal Organelles", mastery: 64, status: "Good Progress", color: "bg-violet" },
-                { name: "Photosynthesis vs Respiration", mastery: 35, status: "High Priority", color: "bg-amber-400" },
-              ].map((topic, i) => (
-                <div key={i} className="p-3 rounded-xl bg-surface/50 border border-line/60 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-white">{topic.name}</span>
-                    <span className="text-2xs text-muted font-mono">{topic.mastery}% ({topic.status})</span>
-                  </div>
-                  <div className="w-full bg-line rounded-full h-1.5 overflow-hidden">
-                    <div className={`h-full ${topic.color} rounded-full transition-all`} style={{ width: `${topic.mastery}%` }} />
-                  </div>
-                </div>
-              ))}
+            {/* Quick Actions for this material */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <Link
+                href="/tutor"
+                className="p-3 rounded-xl bg-surface/60 border border-line hover:border-violet/40 transition-colors flex items-center gap-2.5 text-xs text-slate-200"
+              >
+                <Brain size={16} className="text-violet shrink-0" />
+                <span>Ask Grounded Tutor</span>
+              </Link>
+              <Link
+                href="/visuals"
+                className="p-3 rounded-xl bg-surface/60 border border-line hover:border-mint/40 transition-colors flex items-center gap-2.5 text-xs text-slate-200"
+              >
+                <Box size={16} className="text-mint shrink-0" />
+                <span>Explore in 3D</span>
+              </Link>
+              <Link
+                href="/practice"
+                className="p-3 rounded-xl bg-surface/60 border border-line hover:border-amber-400/40 transition-colors flex items-center gap-2.5 text-xs text-slate-200"
+              >
+                <Target size={16} className="text-amber-400 shrink-0" />
+                <span>Realtime Quiz</span>
+              </Link>
             </div>
           </Card>
 
-          {/* Recent Quiz Performance Chart Mockup */}
+          {/* Diagnostic Performance History */}
           <Card className="space-y-4">
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
                 <Target size={16} className="text-mint" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Diagnostic Performance History</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Diagnostic Quiz Performance
+                </h3>
               </div>
-              <Link href="/progress" className="text-xs text-violet hover:underline">Full Analytics →</Link>
+              <Link href="/practice" className="text-xs text-violet hover:underline">
+                New Quiz →
+              </Link>
             </div>
 
-            <div className="space-y-3">
-              {[
-                { attempt: "Attempt #2", date: "Today, 2:40 PM", score: "3 / 5", pct: 60, weak: ["Mitochondria", "Photosynthesis"] },
-                { attempt: "Attempt #1", date: "Yesterday, 10:15 AM", score: "2 / 5", pct: 40, weak: ["Organelles", "Energy", "Plant Cells"] },
-              ].map((att, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <strong className="text-white font-semibold">{att.attempt}</strong>
-                      <span className="text-2xs text-muted font-mono">{att.date}</span>
+            {attempts.length > 0 ? (
+              <div className="space-y-3">
+                {attempts.slice(0, 3).map((att, idx) => (
+                  <div
+                    key={att.id || idx}
+                    className="p-3.5 rounded-xl bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-white font-semibold">
+                          {att.materialTitle || "Quiz Attempt"}
+                        </strong>
+                        <span className="text-2xs text-muted font-mono">{att.date}</span>
+                      </div>
+                      {att.weakTopics && att.weakTopics.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-2xs text-muted">Weak points flagged:</span>
+                          {att.weakTopics.map((w, wIdx) => (
+                            <span
+                              key={wIdx}
+                              className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300 text-2xs border border-rose-500/20"
+                            >
+                              {w}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-2xs text-muted">Weak points flagged:</span>
-                      {att.weak.map((w, wIdx) => (
-                        <span key={wIdx} className="px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-300 text-2xs border border-rose-500/20">{w}</span>
-                      ))}
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-bold text-white block">
+                        {att.score} / {att.total} ({att.pct}%)
+                      </span>
+                      <span className="text-2xs text-mint">
+                        {att.pct >= 70 ? "Mastery Demonstrated" : "Revision Recommended"}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-sm font-bold text-white block">{att.score} ({att.pct}%)</span>
-                    <span className="text-2xs text-mint">+20% improvement</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 rounded-2xl bg-surface/50 border border-line text-center space-y-2">
+                <p className="text-xs text-slate-300 font-medium">
+                  No quizzes completed yet. Test your understanding to calibrate your mastery score!
+                </p>
+                <Link href="/practice">
+                  <Button size="sm" className="mt-2">
+                    <Target size={14} /> Start Realtime Quiz
+                  </Button>
+                </Link>
+              </div>
+            )}
           </Card>
         </div>
 
@@ -188,18 +274,37 @@ export default function DashboardOverviewPage() {
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-amber-400" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Spaced Revision Tasks</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Spaced Revision Tasks
+                </h3>
               </div>
-              <Link href="/revision" className="text-2xs text-violet hover:underline">View Plan</Link>
+              <Link href="/revision" className="text-2xs text-violet hover:underline">
+                View Plan
+              </Link>
             </div>
 
             <div className="space-y-2.5">
               {[
-                { day: "Day 1 (Today)", task: "Review Mitochondrial Cristae on Page 2", time: "5m", done: false },
-                { day: "Day 1 (Today)", task: "Solve 2 targeted questions on ATP synthesis", time: "4m", done: false },
-                { day: "Day 2 (Tomorrow)", task: "Active recall test on Photosynthesis equation", time: "6m", done: false },
+                {
+                  day: "Day 1 (Today)",
+                  task: `Review high-priority concepts in ${activeTitle.slice(0, 24)}...`,
+                  time: "5m",
+                },
+                {
+                  day: "Day 1 (Today)",
+                  task: "Solve targeted practice questions on weak topics",
+                  time: "4m",
+                },
+                {
+                  day: "Day 2 (Tomorrow)",
+                  task: "Active recall test on key structural relationships",
+                  time: "6m",
+                },
               ].map((t, idx) => (
-                <div key={idx} className="p-3 rounded-xl bg-surface border border-line flex items-start gap-2.5 text-xs">
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl bg-surface border border-line flex items-start gap-2.5 text-xs"
+                >
                   <div className="w-4 h-4 rounded border border-line mt-0.5 shrink-0" />
                   <div>
                     <div className="flex items-center gap-2">
@@ -221,9 +326,14 @@ export default function DashboardOverviewPage() {
 
           {/* Quick Learning Aids */}
           <Card className="space-y-3">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">Interactive AI Tools</h3>
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">
+              Interactive AI Tools
+            </h3>
             <div className="space-y-2">
-              <Link href="/tutor" className="p-3 rounded-xl bg-surface border border-line hover:border-violet/40 block transition-all">
+              <Link
+                href="/tutor"
+                className="p-3 rounded-xl bg-surface border border-line hover:border-violet/40 block transition-all"
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Brain size={16} className="text-violet" />
@@ -231,10 +341,15 @@ export default function DashboardOverviewPage() {
                   </div>
                   <ChevronRight size={14} className="text-muted" />
                 </div>
-                <p className="text-2xs text-muted mt-1">Get simple explanations with verified page citations.</p>
+                <p className="text-2xs text-muted mt-1">
+                  Get simple explanations with verified page citations.
+                </p>
               </Link>
 
-              <Link href="/visuals" className="p-3 rounded-xl bg-surface border border-line hover:border-violet/40 block transition-all">
+              <Link
+                href="/visuals"
+                className="p-3 rounded-xl bg-surface border border-line hover:border-violet/40 block transition-all"
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Box size={16} className="text-mint" />
@@ -242,7 +357,9 @@ export default function DashboardOverviewPage() {
                   </div>
                   <ChevronRight size={14} className="text-muted" />
                 </div>
-                <p className="text-2xs text-muted mt-1">Turn complex biology and physics into visual models.</p>
+                <p className="text-2xs text-muted mt-1">
+                  Turn complex concepts into interactive 3D models.
+                </p>
               </Link>
             </div>
           </Card>

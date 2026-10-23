@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -10,17 +11,28 @@ import {
   Box,
   Target,
   Download,
-  ArrowRight
+  ArrowRight,
+  BookOpen,
 } from "lucide-react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { getUserStats, formatStudyTime, UserStats } from "@/lib/userStats";
 
 export default function ProgressPage() {
-  const attempts = [
-    { id: 1, date: "Today, 2:40 PM", score: 3, total: 5, pct: 60, material: "Introduction to Cell Biology" },
-    { id: 2, date: "Yesterday, 10:15 AM", score: 2, total: 5, pct: 40, material: "Introduction to Cell Biology" },
-  ];
+  const { user } = useAuth();
+  const [stats, setStats] = useState<UserStats | null>(null);
+
+  useEffect(() => {
+    const loaded = getUserStats(user?.email);
+    setStats(loaded);
+  }, [user]);
+
+  const streakDays = stats?.streakDays ?? 1;
+  const studyTimeFormatted = formatStudyTime(stats?.totalStudyMinutes ?? 25);
+  const masteryPct = stats?.overallMastery ?? 60;
+  const attempts = stats?.quizAttempts ?? [];
 
   const handleDownloadReport = () => {
     window.print();
@@ -36,13 +48,13 @@ export default function ProgressPage() {
               Longitudinal Analytics
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-mint" />
-            <span className="text-2xs text-muted">Active Mastery Metrics</span>
+            <span className="text-2xs text-muted">Personalized Study Metrics</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Learning Progress & Retention
           </h1>
           <p className="text-xs text-muted mt-1">
-            Track mastery growth, quiz trends, and study velocity across your courses.
+            Track your real mastery growth, quiz scores, and study streak across all uploaded materials.
           </p>
         </div>
 
@@ -51,13 +63,37 @@ export default function ProgressPage() {
         </Button>
       </div>
 
-      {/* ── Metric Summary Cards ──────────────────────────────── */}
+      {/* ── Metric Summary Cards (Dynamic & Scoped to User) ──── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Overall Mastery", value: "68%", sub: "+20% from first attempt", icon: Award, tint: "text-mint bg-mint/10" },
-          { label: "Learning Streak", value: "4 Days", sub: "Goal: 7 days", icon: Flame, tint: "text-amber-400 bg-amber-400/10" },
-          { label: "Total Study Time", value: "3h 45m", sub: "Recorded across sessions", icon: Clock, tint: "text-sky-400 bg-sky-400/10" },
-          { label: "Completed Tasks", value: "8 / 12", sub: "66% revision completion", icon: CheckCircle2, tint: "text-violet bg-violet/10" },
+          {
+            label: "Overall Mastery",
+            value: `${masteryPct}%`,
+            sub: attempts.length > 0 ? `Across ${attempts.length} quiz attempt(s)` : "Calibrate via diagnostic quiz",
+            icon: Award,
+            tint: "text-mint bg-mint/10",
+          },
+          {
+            label: "Learning Streak",
+            value: `${streakDays} ${streakDays === 1 ? "Day" : "Days"}`,
+            sub: streakDays === 1 ? "Day 1 — Welcome to LearnMate!" : "Keep your daily streak going!",
+            icon: Flame,
+            tint: "text-amber-400 bg-amber-400/10",
+          },
+          {
+            label: "Total Study Time",
+            value: studyTimeFormatted,
+            sub: "Recorded across active sessions",
+            icon: Clock,
+            tint: "text-sky-400 bg-sky-400/10",
+          },
+          {
+            label: "Discovered Topics",
+            value: `${stats?.topicsDiscovered || 4} Topics`,
+            sub: `Across ${stats?.materialsCount || 1} material(s)`,
+            icon: BookOpen,
+            tint: "text-violet bg-violet/10",
+          },
         ].map((m, i) => (
           <Card key={i} className="p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
@@ -81,61 +117,60 @@ export default function ProgressPage() {
               Diagnostic Quiz Score Trajectory
             </h3>
           </div>
-          <span className="text-2xs text-muted font-mono">Goal: 100% Mastery</span>
+          <Link href="/practice" className="text-xs text-violet hover:underline">
+            Take Quiz Now →
+          </Link>
         </div>
 
-        <div className="space-y-4 pt-2">
-          {attempts.map((att) => (
-            <div key={att.id} className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-white">
-                  Attempt #{att.id} &bull; <span className="text-muted font-normal">{att.date}</span>
-                </span>
-                <span className="font-mono font-bold text-violet-bright">
-                  {att.score} / {att.total} ({att.pct}%)
-                </span>
-              </div>
-              <div className="w-full bg-surface rounded-full h-3 p-0.5 border border-line">
-                <div
-                  className="bg-gradient-to-r from-violet to-mint h-full rounded-full transition-all duration-700"
-                  style={{ width: `${att.pct}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* ── Topic Mastery Matrix ──────────────────────────────── */}
-      <Card className="p-6 space-y-4">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">
-          Subject Topic Mastery Matrix
-        </h3>
-
-        <div className="space-y-3">
-          {[
-            { name: "Cell Membrane & Transport", mastery: 85, status: "Mastered", color: "bg-mint" },
-            { name: "Mitochondria & ATP Synthesis", mastery: 48, status: "Revising", color: "bg-rose-400" },
-            { name: "Plant vs Animal Organelles", mastery: 64, status: "Familiar", color: "bg-violet" },
-            { name: "Photosynthesis vs Respiration", mastery: 35, status: "Priority Focus", color: "bg-amber-400" },
-          ].map((topic, i) => (
-            <div key={i} className="p-4 rounded-xl bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div>
-                <span className="font-semibold text-white block">{topic.name}</span>
-                <span className="text-2xs text-muted">Status: {topic.status}</span>
-              </div>
-              <div className="w-full sm:w-48 space-y-1">
-                <div className="flex justify-between text-2xs font-mono">
-                  <span className="text-muted">Mastery:</span>
-                  <span className="text-white font-bold">{topic.mastery}%</span>
+        {attempts.length > 0 ? (
+          <div className="space-y-4 pt-2">
+            {attempts.map((att, idx) => (
+              <div key={att.id || idx} className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-white">
+                    {att.materialTitle || "Quiz Attempt"} &bull;{" "}
+                    <span className="text-muted font-normal">{att.date}</span>
+                  </span>
+                  <span className="font-mono font-bold text-violet-bright">
+                    {att.score} / {att.total} ({att.pct}%)
+                  </span>
                 </div>
-                <div className="w-full bg-line rounded-full h-1.5 overflow-hidden">
-                  <div className={`h-full ${topic.color} rounded-full`} style={{ width: `${topic.mastery}%` }} />
+                <div className="w-full bg-surface rounded-full h-3 p-0.5 border border-line">
+                  <div
+                    className="bg-gradient-to-r from-violet to-mint h-full rounded-full transition-all duration-700"
+                    style={{ width: `${Math.max(5, att.pct)}%` }}
+                  />
                 </div>
+                {att.weakTopics && att.weakTopics.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-2xs text-muted">
+                    <span>Weak areas flagged for revision:</span>
+                    {att.weakTopics.map((w, wIdx) => (
+                      <span
+                        key={wIdx}
+                        className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono"
+                      >
+                        {w}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 rounded-2xl bg-surface/50 border border-line text-center space-y-3">
+            <Target size={32} className="mx-auto text-violet/60" />
+            <h4 className="text-sm font-semibold text-white">No Quiz Attempts Recorded Yet</h4>
+            <p className="text-xs text-muted max-w-sm mx-auto">
+              Select any of your uploaded PDFs or study materials to take an interactive quiz and track your learning curve.
+            </p>
+            <Link href="/practice">
+              <Button size="sm">
+                <Target size={14} /> Launch Practice Quiz
+              </Button>
+            </Link>
+          </div>
+        )}
       </Card>
     </div>
   );

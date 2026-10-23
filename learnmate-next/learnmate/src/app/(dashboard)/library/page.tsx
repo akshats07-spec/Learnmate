@@ -295,7 +295,19 @@ export default function LibraryPage() {
                 </div>
               </div>
 
-              <div className="pt-4 mt-2">
+              <div className="pt-4 mt-2 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href={`/practice?materialId=${mat.id}`}>
+                    <Button size="sm" className="w-full justify-center text-xs">
+                      <span>Take Quiz</span>
+                    </Button>
+                  </Link>
+                  <Link href={`/visuals?topic=${encodeURIComponent(mat.name)}`}>
+                    <Button variant="secondary" size="sm" className="w-full justify-center text-xs">
+                      <span>3D Model</span>
+                    </Button>
+                  </Link>
+                </div>
                 <Link href={`/library/${mat.id}`}>
                   <Button variant="outline" size="sm" className="w-full justify-between text-xs">
                     <span>Open Learning Workspace</span>

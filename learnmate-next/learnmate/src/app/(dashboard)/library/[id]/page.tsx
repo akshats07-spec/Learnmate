@@ -169,14 +169,19 @@ export default function MaterialWorkspacePage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Link href="/practice">
+          <Link href={`/practice?materialId=${Array.isArray(params.id) ? params.id[0] : params.id}`}>
             <Button size="sm">
               <Target size={14} /> Diagnostic Quiz
             </Button>
           </Link>
-          <Link href="/visuals">
+          <Link href={`/visuals?topic=${encodeURIComponent(currentTopic?.name || docName)}`}>
             <Button variant="secondary" size="sm">
               <Box size={14} /> 3D Visualizer
+            </Button>
+          </Link>
+          <Link href={`/tutor?topic=${encodeURIComponent(currentTopic?.name || docName)}`}>
+            <Button variant="ghost" size="sm">
+              <Brain size={14} /> Ask Tutor
             </Button>
           </Link>
         </div>

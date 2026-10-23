@@ -62,15 +62,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (res.ok && data.user) {
+        const streak = data.user.streak_days || 1;
+        const minutes = data.user.study_minutes || 0;
         const u = {
           id: data.user.id,
           email: data.user.email,
-          user_metadata: { display_name: data.user.name },
+          user_metadata: {
+            display_name: data.user.name,
+            streak_days: streak,
+            study_minutes: minutes,
+          },
           app_metadata: {},
           aud: "authenticated",
           created_at: new Date().toISOString(),
         } as unknown as User;
         localStorage.setItem("learnmate_user", JSON.stringify(u));
+        const userKey = `learnmate_user_stats_${data.user.email.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+        localStorage.setItem(userKey, JSON.stringify({
+          streakDays: streak,
+          totalStudyMinutes: minutes,
+          lastActiveDate: new Date().toDateString(),
+        }));
         setUser(u);
         return { error: null };
       }
@@ -90,12 +102,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const demoUser = {
       id: `usr-${Date.now()}`,
       email,
-      user_metadata: { display_name: email.split("@")[0] },
+      user_metadata: {
+        display_name: email.split("@")[0],
+        streak_days: 1,
+        study_minutes: 0,
+      },
       app_metadata: {},
       aud: "authenticated",
       created_at: new Date().toISOString(),
     } as unknown as User;
     localStorage.setItem("learnmate_user", JSON.stringify(demoUser));
+    const userKey = `learnmate_user_stats_${email.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+    localStorage.setItem(userKey, JSON.stringify({
+      streakDays: 1,
+      totalStudyMinutes: 0,
+      lastActiveDate: new Date().toDateString(),
+    }));
     setUser(demoUser);
     return { error: null };
   }, [supabase]);
@@ -110,15 +132,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (res.ok && data.user) {
+        // A brand new user ALWAYS starts at 1 Day streak and 0 study minutes
         const u = {
           id: data.user.id,
           email: data.user.email,
-          user_metadata: { display_name: data.user.name },
+          user_metadata: {
+            display_name: data.user.name,
+            streak_days: 1,
+            study_minutes: 0,
+          },
           app_metadata: {},
           aud: "authenticated",
           created_at: new Date().toISOString(),
         } as unknown as User;
         localStorage.setItem("learnmate_user", JSON.stringify(u));
+        const userKey = `learnmate_user_stats_${data.user.email.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+        // Explicitly set 1 Day streak for newly registered user
+        localStorage.setItem(userKey, JSON.stringify({
+          streakDays: 1,
+          totalStudyMinutes: 0,
+          lastActiveDate: new Date().toDateString(),
+        }));
         setUser(u);
         return { error: null };
       }
@@ -132,20 +166,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (supabase) {
       const { error } = await supabase.auth.signUp({
         email, password,
-        options: { data: { display_name: name } },
+        options: { data: { display_name: name, streak_days: 1, study_minutes: 0 } },
       });
       return { error: error?.message ?? null };
     }
 
+    // Local fallback for new user
     const demoUser = {
       id: `usr-${Date.now()}`,
       email,
-      user_metadata: { display_name: name || email.split("@")[0] },
+      user_metadata: {
+        display_name: name || email.split("@")[0],
+        streak_days: 1,
+        study_minutes: 0,
+      },
       app_metadata: {},
       aud: "authenticated",
       created_at: new Date().toISOString(),
     } as unknown as User;
     localStorage.setItem("learnmate_user", JSON.stringify(demoUser));
+    const userKey = `learnmate_user_stats_${email.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+    localStorage.setItem(userKey, JSON.stringify({
+      streakDays: 1,
+      totalStudyMinutes: 0,
+      lastActiveDate: new Date().toDateString(),
+    }));
     setUser(demoUser);
     return { error: null };
   }, [supabase]);
@@ -162,7 +207,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const signInWithGoogle = useCallback(async () => {
-    if (!supabase) return { error: "Supabase not configured." };
+    if (!supabase) {
+      // Demo fallback
+      const demoUser = {
+        id: `usr-google-${Date.now()}`,
+        email: "student@google.com",
+        user_metadata: { display_name: "Google Student", streak_days: 1, study_minutes: 0 },
+        app_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+      } as unknown as User;
+      localStorage.setItem("learnmate_user", JSON.stringify(demoUser));
+      setUser(demoUser);
+      return { error: null };
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -171,15 +229,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const resetPassword = useCallback(async (email: string) => {
-    if (!supabase) return { error: "Supabase not configured." };
+    if (!supabase) {
+      return { error: null };
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+      redirectTo: `${window.location.origin}/reset-password`,
     });
     return { error: error?.message ?? null };
   }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut, signInWithGoogle, resetPassword }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        signIn,
+        signUp,
+        signOut,
+        signInWithGoogle,
+        resetPassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -187,8 +258,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
   return ctx;
 }
-
-export { hasSupabase };
