@@ -1,0 +1,10 @@
+version: "2"
+tunnels:
+  learnmate-frontend:
+    proto: http
+    addr: 3000
+    inspect: true
+  learnmate-backend:
+    proto: http
+    addr: 8000
+    inspect: true
